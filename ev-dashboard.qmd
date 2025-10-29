@@ -3,3 +3,61 @@ title: "EV Power Dashboard"
 format: dashboard
 ---
 
+
+
+### Overview
+
+A quick look into energy trends across the United States from 2021 to 2023, looking at both change in the proportion of energy that is renewable as well as total energy usage.
+
+```{r}
+#| include: false
+library(tidyverse)
+library(usmap)
+library(knitr)
+unsummarized_energy_change <- read_csv("energy_prop_change")
+total_energy_change_2 <- read_csv("total_energy_change_2")
+energy_change <- read_csv("energy_change")
+total_energy_change <- read_csv("total_energy_change")
+```
+
+### Map Visualization
+```{r}
+#| layout-ncol: 2
+#| fig-height: 3
+plot_usmap(linewidth = 0.1, color = "dimgrey", data = energy_change, 
+    values = "Renewable_Change") +
+    theme(legend.position = "right", plot.title = element_text(hjust = 0.5, size = 15)) + 
+    scale_fill_gradient2(low = "red3", mid = "white", high = "deepskyblue4", midpoint = 0) +
+    labs(title = "Renewable Energy Use from 2021-2023",
+    fill = "Change in Proportion")
+
+plot_usmap(linewidth = 0.1, color = "dimgrey", data = total_energy_change, 
+    values = "Percent_Change") +
+    theme(legend.position = "right", plot.title = element_text(hjust = 0.5, size = 15)) + 
+    scale_fill_gradient2(high = "red3", mid = "white", low = "deepskyblue4", midpoint = 0) +
+    labs(title = "Total Energy Change from 2021-2023", fill = "Percent Change")
+```
+
+### Data Table
+
+```{r}
+#| echo: false
+Figure_1 <- unsummarized_energy_change |>
+    kable()
+Figure_2 <- total_energy_change_2 |>
+    rename("Percent Change" = Percent_Change) |>
+    kable()
+
+```
+
+```{r}
+#| echo: false
+cat("Proportion of Renewable Energy 2021–2023")
+Figure_1
+```
+
+```{r}
+#| echo: false
+cat("Change in Total Energy 2021–2023")
+Figure_2
+```

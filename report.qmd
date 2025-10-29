@@ -3,32 +3,243 @@ title: "EV Power - Lab 4 Project Report"
 format: typst
 ---
 
+
 # Example Solution 1
 
 ## **Part 0: libraries**
 
+
 ```{r}
+#| include: false
+
+library(tidyverse)
+library(tidyr)
+# install.packages("maps")
+# install.packages("sf")
+# install.packages("usmap")
+library(sf)
+library(maps)
+library(usmap)
+library(knitr)
+
+write_csv(unsummarized_energy_change, "unsummarized_energy_change")
+write_csv(total_energy_change_2, "total_energy_change_2")
+write_csv(energy_change, "energy_change")
+write_csv(total_energy_change, "total_energy_change")
 
 ```
 
-## **Part 1:** **Defining Research Question**
+## **Research Question**
 
-Chosen Question:
+What is the overall trend in both total energy and renewable energy across the United States from 2021-2023?
 
+```{r}
+#| include: false
 ## **Part 2: Data Preparation and Cleaning**
+```
 
 ```{r}
+#| include: false
+
+renewable_energy_2021 <- read.csv("data/renew-use-2021.csv")
+renewable_energy_2022 <- read.csv("data/renew-use-2022.csv")
+renewable_energy_2023 <- read.csv("data/renew-use-2023.csv")
+total_energy_2021 <- read.csv("data/total-use-2021.csv")
+total_energy_2022 <- read.csv("data/total-use-2022.csv")
+total_energy_2023 <- read.csv("data/total-use-2023.csv")
+ev_reg_2023 <- read.csv("data/ev-registrations-by-state-2023.csv")
+energy_prices <- read.csv("data/av-energy-price-2021-2023.csv")
+
+energy_prices <- separate_wider_delim(energy_prices, 
+Total.energy.average.price..dollars.per.million.Btu..., delim=",", 
+names = c("State", "2021", "2022", "2023"))
+energy_prices <- slice(energy_prices, -c(1,2))
+
+energy_prices <- energy_prices |>
+    mutate("2021" = str_extract(energy_prices[[2]], "[0-9]+\\.[0-9]+"),
+    "2022" = str_extract(energy_prices[[3]], "[0-9]+\\.[0-9]+"),
+    "2023" = str_extract(energy_prices[[4]], "[0-9]+\\.[0-9]+")) 
+energy_prices <- energy_prices |>
+    mutate("2021" = as.double(energy_prices[[2]]), 
+    "2022" = as.double(energy_prices[[3]]), "2023" = as.double(energy_prices[[4]]))
+
+ev_reg_2023 <- ev_reg_2023 |>
+    slice(-c(1, 2)) |>
+    rename(State = electric.vehicle.registrations_by_state..2023., EV_Count = X) |>
+    mutate(EV_Count = str_extract(EV_Count, "\\d+"))
+state_abbr <- state.abb[match(ev_reg_2023$State, state.name)]
+state_abbr[9] <- "DC"
+state_abbr[52] <- "US"
+ev_reg_2023 <- ev_reg_2023 |>
+    mutate(State = state_abbr, EV_Count = as.integer(EV_Count))
+
+energy_sources <- c("Coal", "Natural Gas", "Petroleum", "Nuclear", "Renewable")
+total_energy_2021 <- mutate(total_energy_2021, Energy_Source=energy_sources)
+total_energy_2022 <- mutate(total_energy_2022, Energy_Source=energy_sources)
+total_energy_2023 <- mutate(total_energy_2023, Energy_Source=energy_sources)
+
+renewable_energy_2021 <- renewable_energy_2021 |>
+    mutate(Renewable_Use_2021 = str_extract(Renewable_Use_2021, "\\d+"))
+renewable_energy_2022 <- renewable_energy_2022 |>
+    mutate(Renewable_Use_2022 = str_extract(Renewable_Use_2022, "\\d+"))
+renewable_energy_2023 <- renewable_energy_2023 |>
+    mutate(Renewable_Use_2023 = str_extract(Renewable_Use_2023, "\\d+"))
 
 ```
+
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
+
 ```{r}
+#| include: false
+
+pivoted_renewable_energy_2021 <- pivot_wider(renewable_energy_2021, names_from = "Energy_Source", values_from = "Renewable_Use_2021")
+pivoted_renewable_energy_2023 <- pivot_wider(renewable_energy_2023, names_from = "Energy_Source", values_from = "Renewable_Use_2023")
+pivoted_renewable_energy_2023 <- mutate(pivoted_renewable_energy_2023, State = toupper(State))
+
+pivoted_total_energy_2021 <- pivot_longer(total_energy_2021, cols = all_of(state_abbr), names_to = "State", values_to = "Energy Use")
+pivoted_total_energy_2021 <- pivot_wider(pivoted_total_energy_2021, names_from = "Energy_Source", values_from = "Energy Use")
+pivoted_total_energy_2022 <- pivot_longer(total_energy_2022, cols = all_of(state_abbr), names_to = "State", values_to = "Energy Use")
+pivoted_total_energy_2022 <- pivot_wider(pivoted_total_energy_2022, names_from = "Energy_Source", values_from = "Energy Use")
+pivoted_total_energy_2023 <- pivot_longer(total_energy_2023, cols = all_of(state_abbr), names_to = "State", values_to = "Energy Use")
+pivoted_total_energy_2023 <- pivot_wider(pivoted_total_energy_2023, names_from = "Energy_Source", values_from = "Energy Use")
+
+total_energy_and_EV <- left_join(pivoted_total_energy_2023, ev_reg_2023, by = "State")
+
+total_energy_and_EV <- total_energy_and_EV |>
+    mutate(Non_Renewable = (Coal + `Natural Gas` + Petroleum + Nuclear)) |>
+    mutate(Total_Energy = Non_Renewable + Renewable) |>
+    select(c(1, 6, 7, 8, 9)) |>
+    relocate(EV_Count, .after = Total_Energy)
+
+energy_2021 <- pivoted_total_energy_2021 |>
+    mutate(Non_Renewable = (Coal + `Natural Gas` + Petroleum + Nuclear)) |>
+    select(c(1, 6, 7)) |>
+    mutate(Total_Energy = Non_Renewable + Renewable) |>
+    mutate(Renewable_Prop = Renewable/Total_Energy, Non_Renewable_Prop = Non_Renewable/Total_Energy) |>
+    select(c(1, 5, 6))
+energy_2022 <- pivoted_total_energy_2022 |>
+    mutate(Non_Renewable = (Coal + `Natural Gas` + Petroleum + Nuclear), 
+           Total_Energy = Non_Renewable + Renewable, 
+           Renewable_Prop = Renewable/Total_Energy, Non_Renewable_Prop = Non_Renewable/Total_Energy) |>
+    select(c(1, 9, 10))
+energy_2023 <- pivoted_total_energy_2023 |>
+    mutate(Non_Renewable = (Coal + `Natural Gas` + Petroleum + Nuclear), 
+           Total_Energy = Non_Renewable + Renewable, 
+           Renewable_Prop = Renewable/Total_Energy, Non_Renewable_Prop = Non_Renewable/Total_Energy) |>
+    select(c(1, 9, 10))
+
+energy_change <- left_join(energy_2021, energy_2023, by = "State") |>
+    rename(Renewable_2021 = Renewable_Prop.x, Non_Renewable_2021 = Non_Renewable_Prop.x,
+    Renewable_2023 = Renewable_Prop.y, Non_Renewable_2023 = Non_Renewable_Prop.y) |>
+    group_by(State) |>
+    summarize(Renewable_Change = Renewable_2023 - Renewable_2021)
+#state_full <- state.name[match(energy_change$State, state.abb)]
+#state_full[8] <- "District of Columbia"
+#state_full[45] <- "United States"
+#tolower(state_full)
+energy_change <- energy_change |>
+    rename(state = State)
+
+energy_summary_2021 <- pivoted_total_energy_2021 |>
+    mutate(Non_Renewable = (Coal + `Natural Gas` + Petroleum + Nuclear)) |>
+    select(c(1, 6, 7)) |>
+    mutate(Total_Energy = Non_Renewable + Renewable)
+energy_summary_2023 <- pivoted_total_energy_2023 |>
+    mutate(Non_Renewable = (Coal + `Natural Gas` + Petroleum + Nuclear)) |>
+    select(c(1, 6, 7)) |>
+    mutate(Total_Energy = Non_Renewable + Renewable)
+total_energy_change <- left_join(energy_summary_2021, energy_summary_2023, by = "State")
+total_energy_change <- total_energy_change |>
+    group_by(State) |>
+    summarize(Percent_Change = ((Total_Energy.y-Total_Energy.x)/Total_Energy.x)*100) |>
+    rename(state = State)
+```
+
+```{r}
+#| include: false
+# Key tables/datasets
+unsummarized_energy_change <- left_join(energy_2021, energy_2023, by = "State") |>
+    rename(Renewable_2021 = Renewable_Prop.x, Non_Renewable_2021 = Non_Renewable_Prop.x,
+    Renewable_2023 = Renewable_Prop.y, Non_Renewable_2023 = Non_Renewable_Prop.y) |>
+    select(State, Renewable_2021, Renewable_2023) |>
+    rename("2021" = Renewable_2021, "2023" = Renewable_2023)
+state_full <- state.name[match(unsummarized_energy_change$State, state.abb)]
+state_full[9] <- "District of Columbia"
+state_full[52] <- "U.S. Total"
+unsummarized_energy_change <- unsummarized_energy_change |>
+    mutate(State = state_full)
+energy_change |>
+    arrange(desc(Renewable_Change)) |>
+    slice(c(1:3, 50:52))
+state_full_1 <- state.name[match(total_energy_change$state, state.abb)]
+state_full_1[8] <- "District of Columbia"
+state_full_1[45] <- "United States Total"
+total_energy_change_2 <- total_energy_change |>
+    rename(State = state) |>
+    mutate(State = state_full_1)
+total_energy_change |>
+    arrange(desc(Percent_Change)) |>
+    slice(c(1:3, 49:52))
+```
+
+### Data and Methods
+
+**Proportion of Renewable Energy**                      **Change in Total Energy 2021-2023**
+
+```{r}
+#| echo: false
+Figure_1 <- unsummarized_energy_change |>
+    slice(c(5, 32, 29, 43, 48, 20, 52)) |>
+    kable()
+
+Figure_2 <- total_energy_change_2 |>
+    rename("Percent Change" = Percent_Change) |>
+    slice(c(1, 12, 14, 25, 46, 51, 45)) |>
+    kable()
 
 ```
+
+::: {layout-ncol="2"}
+```{r}
+#| echo: false
+Figure_1
+```
+
+```{r}
+#| echo: false
+Figure_2
+```
+:::
 
 ## **Part 4: Mapping Visualization**
 
+
+### Map Visualizations
+
 ```{r}
+#| echo: false
+#| out-width: "85%"
+plot_usmap(linewidth = 0.1, color = "dimgrey", data = energy_change, 
+    values = "Renewable_Change") +
+    theme(legend.position = "right", plot.title = element_text(hjust = 0.5, size = 13)) + 
+    scale_fill_gradient2(low = "red3", mid = "white", high = "deepskyblue4", midpoint = 0) +
+    labs(title = "Renewable Energy Use from 2021-2023",
+    fill = "Change in Proportion")
+
+plot_usmap(linewidth = 0.1, color = "dimgrey", data = total_energy_change, 
+    values = "Percent_Change") +
+    theme(legend.position = "right", plot.title = element_text(hjust = 0.5, size = 13)) + 
+    scale_fill_gradient2(high = "red3", mid = "white", low = "deepskyblue4", midpoint = 0) +
+    labs(title = "Total Energy Change from 2021-2023", fill = "Percent Change")
 
 ```
+
+\
+
+#### Analysis
+
+Looking at the change in renewable energy use from 2021 to 2023, the change in proportion of renewable energy over total energy use is illustrated with the color scale on the right where the deeper the blue, the greater increase in proportion of renewable energy (Renewable Energy Proportion 2023 - Renewable Energy Proportion 2021). For example, California when from about 13.2% of their energy being renewable in 2021 to 16.5% in 2023, an increase of roughly 3%. On the other hand, Maine experienced a decrease of roughly 3%, seen from both the table and the deep red on the map. However, there has been an increase overall in the proportion of renewable energy usage from 2021 to 2023, with most states exhibiting an increase rather than a decrease.
+
+It is also important to look at total energy trends as well, to bring the previous data into context with overall energy trends, because though, for example, California experienced the greatest increase in proportion of renewable energy, California also experienced an increase in total energy use overall from 2021-2023. Some states, like West Virginia, while they haven't experienced as much of an increase in renewable energy, have experienced a decrease in total energy use overall, which may lead to lesser environmental impacts than a state that increased their proportion of renewable energy use, but also increased total energy use overall. Additionally, though not as clear to see as the previous, we can also get a sense of total energy use across the whole of the United States, which, as can be seen from the table, experienced an overall percent increase of 0.27%.
